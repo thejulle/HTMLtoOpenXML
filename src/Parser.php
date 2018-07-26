@@ -19,7 +19,7 @@ class Parser
     /**
      * Converts HTML to RTF.
      *
-     * @param string $htmlCode the HTML formatted input string
+     * @param string $html the HTML formatted input string
      * @param bool   $wrapContent
      *
      * @return string The converted string.
@@ -37,7 +37,7 @@ class Parser
         $this->_processListStyle();
         $this->_processBreaks();
         $this->_openXml = $this->_processProperties->processPropertiesStyle(
-                $this->_openXml, 0
+            $this->_openXml, 0
         );
         $this->_removeStartSpaces();
         $this->_removeEndSpaces();
@@ -53,7 +53,9 @@ class Parser
      * Remove empty blocks of XML from the end of the final output
      */
     private function _removeEndSpaces() {
-        $regex = '/<w:t><\/w:t><\/w:r><\/w:p><w:p><w:r><w:t>$/';
+        $regex = sprintf(
+            '/<w:t>%s%s$/', $this->_regexCloseP(), $this->_openP()
+        );
         if (preg_match($regex, $this->_openXml)) {
             $this->_openXml = preg_replace($regex, '<w:t>', $this->_openXml);
 
@@ -66,7 +68,7 @@ class Parser
      * Remove empty blocks of XML from the start of the final output
      */
     private function _removeStartSpaces() {
-        $regex = '/^<w:p><w:r><w:t><\/w:t><\/w:r><\/w:p>/';
+        $regex = sprintf('/^%s%s/', $this->_openP(), $this->_regexCloseP());
         if (preg_match($regex, $this->_openXml)) {
             $this->_openXml = preg_replace($regex, '', $this->_openXml);
 
@@ -76,9 +78,7 @@ class Parser
     }
 
     private function _getOpenXML() {
-        $this->_openXml = "<w:p><w:r><w:t>" . $this->_openXml
-                . "</w:t></w:r></w:p>";
-
+        $this->_openXml = $this->_openP() . $this->_openXml . $this->_closeP();
     }
 
     /**
@@ -97,7 +97,7 @@ class Parser
         $this->_listLevel = 1;
 
         $this->_openXml = preg_replace_callback(
-                '/<li>
+            '/<li>
                 (?>
                     [^<]+
                     |(<[uo]l)>
@@ -106,8 +106,7 @@ class Parser
                 )*
                 <\/li>
                 (?(1)|(*F))
-            /imx',
-                [$this, 'preProcessNestedList'], $this->_openXml
+            /imx', [$this, 'preProcessNestedList'], $this->_openXml
         );
 
         $this->_listLevel = 0;
@@ -132,8 +131,8 @@ class Parser
         $this->_preProcessNestedLists();
 
         $this->_openXml = preg_replace_callback(
-                '/<(ul|ol).*?>(.*?)<\/\1>/im', [$this, 'processList'],
-                $this->_openXml
+            '/<(ul|ol).*?>(.*?)<\/\1>/im', [$this, 'processList'],
+            $this->_openXml
         );
 
     }
@@ -144,15 +143,15 @@ class Parser
         $output = '';
 
         $output .= preg_replace_callback(
-                '/<li.*?>(.*?)<\/li>/im', [$this, 'processListItem'], $html
+            '/<li.*?>(.*?)<\/li>/im', [$this, 'processListItem'], $html
         );
 
-        $output .= '</w:t></w:r></w:p><w:p><w:r><w:t>';
+        $output .= $this->_closeAndOpenP();
 
         if ($this->_listLevel === 0) {
 
             // Add a blank line after the list, otherwise it's attached
-            $output .= '</w:t></w:r></w:p><w:p><w:r><w:t>';
+            $output .= $this->_closeAndOpenP();
         }
 
         $this->_listIndex += 1;
@@ -163,8 +162,8 @@ class Parser
     public function processListItem($html) {
 
         $html = sprintf(
-                "</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val='ListParagraph'/><w:numPr><w:ilvl w:val='%d'/><w:numId w:val='%d'/></w:numPr></w:pPr><w:r><w:t xml:space='preserve'>%s",
-                $this->_listLevel, $this->_listIndex, trim($html[1])
+            "</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val='ListParagraph'/><w:numPr><w:ilvl w:val='%d'/><w:numId w:val='%d'/></w:numPr></w:pPr><w:r><w:t xml:space='preserve'>%s",
+            $this->_listLevel, $this->_listIndex, trim($html[1])
         );
 
         return $html;
@@ -172,11 +171,10 @@ class Parser
 
     private function _processBreaks() {
         $this->_openXml = preg_replace(
-                "/(<\/p>)/mi", "</w:t></w:r></w:p><w:p><w:r><w:t>", $this->_openXml
+            "/(<\/p>)/mi", $this->_closeAndOpenP(), $this->_openXml
         );
         $this->_openXml = preg_replace(
-                "/(<br\s?\/?>)/mi", "</w:t></w:r></w:p><w:p><w:r><w:t>",
-                $this->_openXml
+            "/(<br\s?\/?>)/mi", $this->_closeAndOpenP(), $this->_openXml
         );
 
     }
@@ -190,7 +188,7 @@ class Parser
      */
     public function minifyHtml($html) {
         $re
-                = '%# Collapse whitespace everywhere but in blacklisted elements.
+            = '%# Collapse whitespace everywhere but in blacklisted elements.
         (?>             # Match all whitespans other than single space.
           [^\S ]\s*     # Either one [\t\r\n\f\v] and zero or more ws,
         | \s{2,}        # or two or more consecutive-any-whitespace.
@@ -216,7 +214,7 @@ class Parser
     private function _processSpaces() {
         $this->_openXml = preg_replace("/(&nbsp;)/mi", " ", $this->_openXml);
         $this->_openXml = preg_replace(
-                "/(<w:t>)/mi", "<w:t xml:space='preserve'>", $this->_openXml
+            "/(<w:t>)/mi", "<w:t xml:space='preserve'>", $this->_openXml
         );
 
         $this->_openXml = $this->minifyHtml($this->_openXml);
@@ -229,13 +227,13 @@ class Parser
      */
     private function _preProcessLtGt() {
         $this->_openXml = preg_replace(
-                '/\&(lt|gt);/im', '\$\$$1;', $this->_openXml
+            '/\&(lt|gt);/im', '\$\$$1;', $this->_openXml
         );
         // Just in case also check for &amp;lt;
         $this->_openXml = preg_replace(
-                '/\&amp;(lt|gt);/im', '\$\$$1;', $this->_openXml
+            '/\&amp;(lt|gt);/im', '\$\$$1;', $this->_openXml
         );
-//        prd(($this->_openXml));
+        //        prd(($this->_openXml));
     }
 
     /**
@@ -243,9 +241,25 @@ class Parser
      */
     private function _postProcessLtGt() {
         $this->_openXml = preg_replace(
-                '/\$\$(lt|gt);/', '&$1;', $this->_openXml
+            '/\$\$(lt|gt);/', '&$1;', $this->_openXml
         );
 
+    }
+
+    private function _closeAndOpenP() {
+        return $this->_closeP() . $this->_openP();
+    }
+
+    private function _openP() {
+        return '<w:p><w:r><w:t>';
+    }
+
+    private function _closeP() {
+        return '</w:t></w:r></w:p>';
+    }
+
+    private function _regexCloseP() {
+        return str_replace('/', '\/', $this->_closeP());
     }
 
 }
