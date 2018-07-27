@@ -10,6 +10,7 @@ class Parser
     private $_listIndex = 1;
     private $_listLevel = 0;
     private $_openXml = '';
+    private $_pStyle = null;
 
     public function __construct() {
         $this->_cleaner = new Scripts\HTMLCleaner;
@@ -20,12 +21,13 @@ class Parser
      * Converts HTML to RTF.
      *
      * @param string $html the HTML formatted input string
-     * @param bool   $wrapContent
-     *
+     * @param bool $wrapContent
+     * @param null $pStyle
      * @return string The converted string.
      */
-    public function fromHTML($html, $wrapContent = true) {
+    public function fromHTML($html, $wrapContent = true, $pStyle = null) {
         $this->_openXml = $html;
+        $this->_pStyle = $pStyle;
 
         $this->_preProcessLtGt();
 
@@ -146,12 +148,12 @@ class Parser
             '/<li.*?>(.*?)<\/li>/im', [$this, 'processListItem'], $html
         );
 
-        $output .= $this->_closeAndOpenP();
+        $output .= $this->_closeAndOpenP(true);
 
         if ($this->_listLevel === 0) {
 
             // Add a blank line after the list, otherwise it's attached
-            $output .= $this->_closeAndOpenP();
+            $output .= $this->_closeAndOpenP(true);
         }
 
         $this->_listIndex += 1;
@@ -162,8 +164,9 @@ class Parser
     public function processListItem($html) {
 
         $html = sprintf(
-            "</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val='ListParagraph'/><w:numPr><w:ilvl w:val='%d'/><w:numId w:val='%d'/></w:numPr></w:pPr><w:r><w:t xml:space='preserve'>%s",
-            $this->_listLevel, $this->_listIndex, trim($html[1])
+            '</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val=\'ListParagraph\'/><w:numPr><w:ilvl w:val=\'%1$d\'/><w:numId w:val=\'%2$d\'/></w:numPr>%3$s</w:pPr><w:r>%3$s<w:t xml:space=\'preserve\'>%4$s',
+            $this->_listLevel, $this->_listIndex, $this->_getStyle(),
+            trim($html[1])
         );
 
         return $html;
@@ -171,10 +174,10 @@ class Parser
 
     private function _processBreaks() {
         $this->_openXml = preg_replace(
-            "/(<\/p>)/mi", $this->_closeAndOpenP(), $this->_openXml
+            "/(<\/p>)/mi", $this->_closeAndOpenP(true), $this->_openXml
         );
         $this->_openXml = preg_replace(
-            "/(<br\s?\/?>)/mi", $this->_closeAndOpenP(), $this->_openXml
+            "/(<br\s?\/?>)/mi", $this->_closeAndOpenP(true), $this->_openXml
         );
 
     }
@@ -246,12 +249,19 @@ class Parser
 
     }
 
-    private function _closeAndOpenP() {
-        return $this->_closeP() . $this->_openP();
+    private function _closeAndOpenP($addStyling = false) {
+        return $this->_closeP() . $this->_openP($addStyling);
     }
 
-    private function _openP() {
-        return '<w:p><w:r><w:t>';
+    private function _openP($addStyling = false) {
+        $xml = '<w:p><w:r>%s<w:t>';
+        $style = '';
+
+        if ($addStyling && $this->_pStyle) {
+            $style = $this->_getStyle();
+        }
+
+        return sprintf($xml, $style);
     }
 
     private function _closeP() {
@@ -260,6 +270,21 @@ class Parser
 
     private function _regexCloseP() {
         return str_replace('/', '\/', $this->_closeP());
+    }
+
+    /**
+     * Returns XML style data
+     *
+     * @param bool $wrap
+     *
+     * @return null|string
+     */
+    private function _getStyle($wrap = true) {
+        if ( ! $wrap) {
+            return $this->_pStyle;
+        }
+
+        return sprintf('<w:rPr>%s</w:rPr>', $this->_pStyle);
     }
 
 }
