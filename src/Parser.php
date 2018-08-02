@@ -148,7 +148,7 @@ class Parser
             '/<li.*?>(.*?)<\/li>/im', [$this, 'processListItem'], $html
         );
 
-        $output .= $this->_closeAndOpenP(true);
+//        $output .= $this->_closeAndOpenP(true);
 
         if ($this->_listLevel === 0) {
 
