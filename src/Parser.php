@@ -12,6 +12,7 @@ class Parser
     private $_openXml = '';
     private $_pStyle = null;
     private $_rStyle = null;
+    private $_nestedListRegex = '/<li>(?>[^<]+|(<[uo]l)>|<(?!\/?li)[^>]*>|(?R))*<\/li>(?(1)|(*F))/imx';
 
     public function __construct() {
         $this->_cleaner = new Scripts\HTMLCleaner;
@@ -39,11 +40,11 @@ class Parser
         }
 
         $this->_processListStyle();
+
         $this->_processBreaks();
         $this->_openXml = $this->_processProperties->processPropertiesStyle($this->_openXml, 0);
         $this->_removeStartSpaces();
         $this->_removeEndSpaces();
-        //        prd(htmlspecialchars($this->_openXml));
 
         $this->_processSpaces();
 
@@ -68,7 +69,7 @@ class Parser
      * Remove empty blocks of XML from the end of the final output
      */
     private function _removeEndSpaces() {
-        //        $openP = $this->_openP();
+
         $openP = $this->_openP(true);
         $openP = preg_replace('/\//', '\/', $openP);
 
@@ -92,7 +93,6 @@ class Parser
 
             $this->_removeStartSpaces();
         }
-
     }
 
     private function _getOpenXML() {
@@ -100,42 +100,40 @@ class Parser
     }
 
     /**
-     * First we check if there are multiple levels of lists. Only tested with 2
-     * levels, not sure if this will work with more than 2 lists
+     * First we check if there are multiple levels of lists
+     *
+     * @param $html
+     *
+     * @return string
      */
-    private function _preProcessNestedLists() {
-        /*
-        '/<li>(.*?(?!<\/li>).*?)<(ul|ol).*?>(.*?)<\/\2.*?><\/li>/im',
-        // This allows for html in top level nest item, but breaks plain text
+    private function _preProcessNestedLists($html) {
 
-        '/<li>([^<]*)<(?:ul|ol).*?>(.*?)<\/\2.*?><\/li>/im',
-        // doesnt allow html before nest, but works with normal copy
-         */
+        $this->_listLevel += 1;
 
-        $this->_listLevel = 1;
+        $html = preg_replace_callback($this->_nestedListRegex, [$this, 'preProcessNestedList'], $html);
 
-        $this->_openXml = preg_replace_callback('/<li>
-                (?>
-                    [^<]+
-                    |(<[uo]l)>
-                    |<(?!\/?li)[^>]*>
-                    |(?R)
-                )*
-                <\/li>
-                (?(1)|(*F))
-            /imx', [$this, 'preProcessNestedList'], $this->_openXml);
+        $this->_listLevel -= 1;
 
-        $this->_listLevel = 0;
+        return $html;
     }
 
+
     public function preProcessNestedList($html) {
+
         preg_match('/^<li>(.*?)<(ol|ul)>(.*?)<\/\2><\/li>$/', $html[0], $match);
+
+        $htmlInner = $match[3];
+
+        $hasNest = preg_match($this->_nestedListRegex, $htmlInner);
+        if ($hasNest) {
+            $htmlInner = $this->_preProcessNestedLists($htmlInner);
+        }
 
         $output = '';
         if ($match[1]) {
             $output = sprintf('<li>%s</li>', $match[1]);
         }
-        $output .= $this->processList($match[3]);
+        $output .= $this->processList($htmlInner);
 
         return $output;
     }
@@ -144,7 +142,7 @@ class Parser
 
         $this->_openXml = preg_replace("/\n/", ' ', $this->_openXml);
 
-        $this->_preProcessNestedLists();
+        $this->_openXml = $this->_preProcessNestedLists($this->_openXml);
 
         $this->_openXml = preg_replace_callback('/<(ul|ol).*?>(.*?)<\/\1>/im', [$this, 'processList'], $this->_openXml);
 
