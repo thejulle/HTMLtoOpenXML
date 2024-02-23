@@ -184,7 +184,7 @@ class ProcessProperties {
 		$j = false;
 		$i = 0;
 		while($j == false){
-			if($html[($nb+$i)]==">"){
+			if(isset($html[($nb+$i)]) && $html[($nb+$i)]==">"){
 				$j = true;
 			}
 			else{
